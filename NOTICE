@@ -1,0 +1,34 @@
+The MIT licence in LICENSE covers what is actually ours in this repository:
+the host, the tools, the setup script and the documentation. It does NOT
+cover MechCommander 2 itself.
+
+MechCommander 2 is (c) Microsoft Corporation; MechCommander and BattleTech
+are trademarks of their current owners. It is not ours to license. Its
+executable, DLLs, debug symbols, data archives and movies are not in this
+repository and are excluded by .gitignore.
+
+Microsoft's 2006 source release
+-------------------------------
+This repo contains no code, data, symbols or art from the game or from
+Microsoft's 2006 shared-source release. That release is under the "Shared
+Source Limited Permissive License for use of MechCommander 2", which requires
+derivative source to be distributed only under that license (section 3(E))
+and bars commercial use of its art (section 3(A)). It is therefore
+incompatible with this repo's MIT license, and contributors must not read it
+while working here. File formats and behaviour are worked out from the retail
+game and non-code documentation only. The retail debug symbols (MC2REL.PDB)
+are used locally to name functions and are never committed, and nothing
+generated from them is committed either.
+
+Consequences
+------------
+  * You need your own copy of the game. Setup.cmd copies your disc into
+    game/; the pipeline reads it from there.
+
+  * Lifted code is a derivative work of the binary it came from. Anything
+    this pipeline emits into work/ or src/recomp/gen/ carries whatever
+    licence the original carries, not this one. The MIT grant stops at our
+    own work.
+
+This repository carries no third-party code. The toolkit, pcrecomp, is a
+separate checkout beside this one and keeps its own licence.
