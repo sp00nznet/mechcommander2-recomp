@@ -14,3 +14,9 @@ follow [SemVer](https://semver.org/).
   functions. disasm32 seeded with them: 15,002 functions, 99.99% of the
   PDB's. Unseeded, disasm32 scores 89.7% precision and 85.4% recall.
 - Whole-program lift: 15,007 functions, 0 errors, 5.46M lines of C.
+- Host builds on netlab and runs: through the CRT and GameOS init, alive
+  at 30 s. Fixes on the way: `IsBadReadPtr`/`IsBadWritePtr` answer from
+  `VirtualQuery` (the crash handler saw their probe fault first);
+  `DirectInputCreateEx` gets the host's module handle, not the mapped
+  0x00400000 (E_INVALIDARG); `OutputDebugStringA` goes to the log, which is
+  how GameOS reports a STOP.

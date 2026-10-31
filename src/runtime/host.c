@@ -70,7 +70,65 @@ static void shim_ExitProcess(void) {
     ExitProcess(ARG(0));
 }
 
+/* IsBadReadPtr/IsBadWritePtr probe the memory and catch their own fault with
+ * SEH, but the crash handler (a vectored handler) sees the fault first and
+ * ends the run. GameOS's ErrorHandler calls them while dumping memory.
+ * Answer from VirtualQuery instead, which never faults.
+ * ponytail: host-only for now; belongs in native32 as a built-in shim. */
+static uint32_t bad_ptr(uint32_t p, uint32_t n, DWORD ok) {
+    if (!n) return 0;
+    if (!p) return 1;
+    uint64_t a = p, end = (uint64_t)p + n;
+    while (a < end) {
+        MEMORY_BASIC_INFORMATION mi;
+        if (!VirtualQuery((void*)(uintptr_t)a, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
+            (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) || !(mi.Protect & ok))
+            return 1;
+        a = (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
+    }
+    return 0;
+}
+
+#define READABLE (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | \
+                  PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+#define WRITABLE (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+static void shim_IsBadReadPtr(void)  { RET(bad_ptr(ARG(0), ARG(1), READABLE), 2); }
+static void shim_IsBadWritePtr(void) { RET(bad_ptr(ARG(0), ARG(1), WRITABLE), 2); }
+
+/* GameOS loads dinput.dll itself and calls DirectInputCreateEx with its
+ * hInstance, 0x00400000. That image is mapped, not loaded, so DirectInput
+ * rejects it (E_INVALIDARG, "STOP : FAILED ... DirectInputCreateEx"). Give
+ * it this host's handle instead. */
+typedef HRESULT (WINAPI *dicreate_t)(HINSTANCE, DWORD, const void*, void**, void*);
+static dicreate_t g_dicreate;
+
+static HRESULT WINAPI host_DirectInputCreateEx(HINSTANCE h, DWORD ver, const void* iid, void** out, void* outer) {
+    if ((uint32_t)(uintptr_t)h == MC2_BASE) h = GetModuleHandleA(NULL);
+    return g_dicreate(h, ver, iid, out, outer);
+}
+
+static void shim_GetProcAddress(void) {
+    HMODULE m = (HMODULE)(uintptr_t)ARG(0);
+    const char* name = (const char*)(uintptr_t)ARG(1);
+    FARPROC p = GetProcAddress(m, name);
+    if (p && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectInputCreateEx")) {
+        g_dicreate = (dicreate_t)p;
+        p = (FARPROC)host_DirectInputCreateEx;
+    }
+    RET((uintptr_t)p, 2);
+}
+
+/* GameOS reports its errors through OutputDebugStringA: into the log. */
+static void shim_OutputDebugStringA(void) {
+    fprintf(stderr, "[debug] %s", (const char*)(uintptr_t)ARG(0));
+    RET(0, 1);
+}
+
 static native32_shim_t g_shims[] = {
+    { "OutputDebugStringA", shim_OutputDebugStringA },
+    { "GetProcAddress", shim_GetProcAddress },
+    { "IsBadReadPtr", shim_IsBadReadPtr },
+    { "IsBadWritePtr", shim_IsBadWritePtr },
     { "GetModuleHandleA", shim_GetModuleHandleA },
     { "GetModuleFileNameA", shim_GetModuleFileNameA },
     { "GetCommandLineA", shim_GetCommandLineA },

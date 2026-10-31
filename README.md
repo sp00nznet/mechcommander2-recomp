@@ -9,7 +9,7 @@ following its shared house style (layout, CLI, conformance harness). Generated
 source is **not** distributed: you bring your own disc and the pipeline
 rebuilds everything locally.
 
-## Status: **v0.1.0-dev, early bring-up. The whole game lifts; the host build is next.**
+## Status: **v0.1.0-dev, early bring-up. The whole game lifts, builds and runs 30 s without a fault; nothing seen on screen yet.**
 
 | Stage | State |
 |---|---|
@@ -18,12 +18,12 @@ rebuilds everything locally.
 | Symbols | the disc ships `MC2REL.PDB`, matching the exe: 9,776 named functions, 5,525 with sizes (pcrecomp `pdb2_ref.py`, pcrecomp#162) |
 | Function catalog | disasm32 seeded from the PDB: 15,002 functions, recall 99.99% against the PDB (unseeded: 89.7% precision, 85.4% recall) |
 | Lift (`run_lift.py`) | **whole program**: 15,007 functions, 0 lift errors, 156 with no terminator, 5.46M lines of C |
-| Host (`build/mc2.exe`, 32-bit, pcrecomp `native32`) | not built yet |
-| Running the game | not tried yet: see [ROADMAP.md](ROADMAP.md) |
+| Host (`build/mc2.exe`, 32-bit, pcrecomp `native32`) | builds (netlab clang-cl). Maps Mc2Rel.exe and binds all 356 imports, 0 unresolved |
+| Running the game | `--run` gets through the CRT and GameOS init (DirectInput fixed in the host) and is alive at 30 s in `SoundRendererUpdate`. No frame captured yet: the recording on the workstation failed |
 
 ## Screenshots
 
-None yet: the game has not been run.
+None yet: the first recorded run produced no frames (offstage). See ROADMAP.
 
 ## What is not in this repo
 

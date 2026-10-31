@@ -5,12 +5,11 @@ is in the README's Status section and in `docs/`.
 
 ## Next
 
-- **Build the host** on netlab (`netlab build mechcommander2-recomp`) and get
-  the dry run's two milestones: Mc2Rel.exe mapped, every import bound.
-- **First `--run`**: through the CRT startup into GameOS's WinMain, under
-  offstage at the console (REPO_RULES section 13). Expect a CD check (the
-  SafeDisc build looks for its disc) and a registry install key; shim them
-  in the host as MechWarrior 3 did, once a run shows what they ask for.
+- **See a frame.** `--run` is alive at 30 s in `SoundRendererUpdate`, but
+  offstage recorded nothing on the workstation. Capture on a netlab VM with
+  the game (`netlab play`), or through the headless mode below.
+- **Move the IsBadReadPtr/IsBadWritePtr shims into native32**: every
+  native32 game with a vectored crash handler has the same problem.
 - **Name the lifted functions.** The PDB names every function; the lift
   still emits `sub_XXXXXXXX`. Carrying the names into the generated C (and
   the fault report) is a pcrecomp change to the lift driver.
