@@ -113,7 +113,7 @@ build\mc2.exe --run --watchdog 30   ...and stop after 30 s with a report of wher
 build\mc2.exe --game D:\mc2         use an install somewhere other than game\
 build\mc2.exe --native-trace        one line per call into Windows or DirectX
 build\mc2.exe --callbacks           one line per call from Windows back into the game
-build\mc2.exe --run --input tools\inputirst-mission.txt   click through to the first mission
+build\mc2.exe --run --input tools\input\first-mission.txt   click through to the first mission
 build\mc2.exe --ddtest              does DirectDraw find the 3D hardware at each startup stage
 py -3 tools\conformance.py [--run]  the conformance harness
 ```
