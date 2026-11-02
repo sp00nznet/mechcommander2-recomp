@@ -33,3 +33,9 @@ follow [SemVer](https://semver.org/).
     names back from SETUP.EXE's file table (`AGENCY_4.D3F` ->
     `assets\Graphicsgencyfb14.d3f`), copying files installed twice;
   - `--ddtest` reports whether DirectDraw finds the hardware at each stage.
+- **Into the first mission.** `--input FILE` scripts the mouse ("MS X Y B"
+  per line, in window coordinates including the title bar) through the
+  host's GetCursorPos/GetAsyncKeyState/GetKeyState, so a run clicks through
+  menus without the real cursor. `tools/input/first-mission.txt` goes New
+  Campaign, Load, skips the intro movie, and lands in Carver V's first
+  mission: HUD, minimap and units are drawn, the 3D view is not.

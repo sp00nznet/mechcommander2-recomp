@@ -5,6 +5,18 @@ is in the README's Status section and in `docs/`.
 
 ## Next
 
+- **Draw the battlefield.** In the first mission the 3D view is a flat
+  fog-coloured field while the HUD draws. Terrain and units are either
+  failing the depth test or fogged out; look at the projection and haze
+  numbers the lifted code produces against the prefs (MaxClipDistance 3000,
+  MinHazeDistance 2000).
+- **The joystick fault** (CMCreateJoystick7 with some HID devices) is hidden,
+  not fixed.
+- **The driver warm-up** works around a failed first load of the display
+  driver from the game's thread; find out why it fails.
+- **Windowed by default**: the first run writes options.cfg with
+  FullScreen = TRUE; Setup should set it to FALSE.
+
 - **See a frame.** `--run` is alive at 30 s in `SoundRendererUpdate`, but
   offstage recorded nothing on the workstation. Capture on a netlab VM with
   the game (`netlab play`), or through the headless mode below.

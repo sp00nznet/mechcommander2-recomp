@@ -159,6 +159,74 @@ static void shim_GetProcAddress(void) {
     RET((uintptr_t)p, 2);
 }
 
+/* --input FILE: scripted mouse, so a run can click through the menus without
+ * the real cursor. Each line is "MS X Y B": from MS milliseconds after the
+ * game starts, the mouse is at client X,Y of the game window with the left
+ * button down (B=1) or up (B=0). The game reads the mouse with GetCursorPos
+ * and GetAsyncKeyState/GetKeyState, and its window procedure sees button
+ * messages; all three follow the script. Before the first line, and with no
+ * script, the real mouse is used. */
+#define MAX_INPUT 512
+static struct { DWORD ms; int x, y, b; } g_in[MAX_INPUT];
+static int g_nin, g_inb;
+static DWORD g_in_t0;
+
+static void load_input(const char* path) {
+    FILE* f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); exit(1); }
+    while (g_nin < MAX_INPUT && fscanf(f, "%lu %d %d %d", &g_in[g_nin].ms, &g_in[g_nin].x,
+                                       &g_in[g_nin].y, &g_in[g_nin].b) == 4)
+        g_nin++;
+    fclose(f);
+}
+
+static HWND game_window(void) { return FindWindowA(NULL, "MechCommander2\\1.0"); }
+
+/* The script line in force now, or -1. Posts the button messages when the
+ * button changes, so the window procedure sees the click too. */
+static int input_now(POINT* screen) {
+    if (!g_nin) return -1;
+    DWORD t = GetTickCount() - g_in_t0;
+    int i = -1;
+    while (i + 1 < g_nin && g_in[i + 1].ms <= t) i++;
+    if (i < 0) return -1;
+    HWND w = game_window();
+    /* The game's cursor sits where the script says when the point is taken
+     * from the window's outer corner: measured from the client area it
+     * landed a title bar's height (37 px) low. */
+    RECT r = {0};
+    if (w) GetWindowRect(w, &r);
+    screen->x = r.left + g_in[i].x;
+    screen->y = r.top + g_in[i].y;
+    if (g_in[i].b != g_inb && w) {
+        g_inb = g_in[i].b;
+        PostMessageA(w, g_inb ? WM_LBUTTONDOWN : WM_LBUTTONUP, g_inb ? MK_LBUTTON : 0,
+                     MAKELPARAM(g_in[i].x, g_in[i].y));
+    }
+    return i;
+}
+
+static void shim_GetCursorPos(void) {
+    POINT* out = (POINT*)(uintptr_t)ARG(0);
+    POINT p;
+    if (input_now(&p) >= 0) { *out = p; RET(1, 1); return; }
+    RET(GetCursorPos(out), 1);
+}
+
+static void shim_GetAsyncKeyState(void) {
+    POINT p;
+    int vk = (int)ARG(0);
+    if (vk == VK_LBUTTON && input_now(&p) >= 0) { RET(g_inb ? 0x8000u : 0, 1); return; }
+    RET((uint16_t)GetAsyncKeyState(vk), 1);
+}
+
+static void shim_GetKeyState(void) {
+    POINT p;
+    int vk = (int)ARG(0);
+    if (vk == VK_LBUTTON && input_now(&p) >= 0) { RET(g_inb ? 0xFF80u : 0, 1); return; }
+    RET((uint16_t)GetKeyState(vk), 1);
+}
+
 /* GameOS reports its errors through OutputDebugStringA: into the log. */
 static void shim_OutputDebugStringA(void) {
     fprintf(stderr, "[debug] %s", (const char*)(uintptr_t)ARG(0));
@@ -167,6 +235,9 @@ static void shim_OutputDebugStringA(void) {
 
 static native32_shim_t g_shims[] = {
     { "OutputDebugStringA", shim_OutputDebugStringA },
+    { "GetCursorPos", shim_GetCursorPos },
+    { "GetAsyncKeyState", shim_GetAsyncKeyState },
+    { "GetKeyState", shim_GetKeyState },
     { "GetProcAddress", shim_GetProcAddress },
     { "IsBadReadPtr", shim_IsBadReadPtr },
     { "IsBadWritePtr", shim_IsBadWritePtr },
@@ -289,6 +360,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--native-trace")) native32_trace_native = 1;
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
         else if (!strcmp(argv[i], "--ddtest")) dd = g_ddtest = 1;
+        else if (!strcmp(argv[i], "--input") && i + 1 < argc) load_input(argv[++i]);
         else {
             printf("usage: mc2 [--run] [--game DIR] [--watchdog S] [--native-trace] [--callbacks]\n"
                    "  without --run: map and bind Mc2Rel.exe, then stop (no window)\n");
@@ -335,6 +407,7 @@ int main(int argc, char** argv) {
      * game's thread does to the driver's DllMain) is not found yet. */
     ddtest(dd ? "before entry" : NULL);
     if (g_watchdog_s) CloseHandle(CreateThread(NULL, 0, watchdog, NULL, 0, NULL));
+    g_in_t0 = GetTickCount();
     printf("  entering 0x%08X\n\n", mc2_entry_va);
     fflush(stdout);
     native32_call_guest(mc2_entry_va, 0, NULL);
