@@ -20,3 +20,16 @@ follow [SemVer](https://semver.org/).
   `DirectInputCreateEx` gets the host's module handle, not the mapped
   0x00400000 (E_INVALIDARG); `OutputDebugStringA` goes to the log, which is
   how GameOS reports a STOP.
+- **Main menu.** Fixes on the way, all in the host or the setup script:
+  - the display driver's user-mode DLL is loaded once before the game
+    starts; loaded first from the game's own DirectDrawCreateEx it fails, so
+    DirectDraw saw no 3D hardware and GameOS fell back to its software
+    rasterizer;
+  - the host relaunches itself with `__COMPAT_LAYER=DWM8And16BitMitigation`,
+    so the game's 16-bit display mode is allowed (no registry change);
+  - no joysticks: GameOS's joystick setup faults with some HID devices, and
+    the game is mouse and keyboard;
+  - `tools/gamefiles.py` gives the disc's 8.3 file names their install
+    names back from SETUP.EXE's file table (`AGENCY_4.D3F` ->
+    `assets\Graphicsgencyfb14.d3f`), copying files installed twice;
+  - `--ddtest` reports whether DirectDraw finds the hardware at each stage.

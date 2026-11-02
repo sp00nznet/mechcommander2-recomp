@@ -16,7 +16,9 @@ Disc images are read with pcrecomp's ISO9660 walker, so nothing is mounted.
 It supplies your own copy to the local build; nothing is downloaded, and none
 of it is ever committed.
 """
+import collections
 import os
+import re
 import shutil
 import string
 import sys
@@ -89,6 +91,58 @@ def from_zip(path):
         os.remove(img)
 
 
+def long_names(d):
+    """Give the copied disc its install names back.
+
+    The disc keeps only 8.3 names (ASSETS\\GRAPHICS\\AGENCY_4.D3F, and folders
+    like DATA\\MULTIP_1), and the game opens the long ones
+    (assets\\Graphics\\agencyfb14.d3f). SETUP.EXE carries the installer's file
+    table: each entry is the short name, a NUL, the install path, a NUL, then
+    two numbers. Each install path is matched to a disc file by its short file
+    name, with the 8.3 folder names breaking ties, and the file is moved there.
+    """
+    setup = find(d, 'SETUP.EXE')
+    if not setup:
+        return 0
+    table = re.findall(rb'(?<![A-Za-z0-9_~$\\.])([A-Z0-9_~$][A-Z0-9_~$\\. -]*\.[A-Z0-9_]{1,3})\x00'
+                       rb'([^\x00]+)\x00[0-9]+\x00-?[0-9]+\x00', open(setup, 'rb').read())
+    by_name = collections.defaultdict(list)
+    for root, _, files in os.walk(d):
+        for f in files:
+            by_name[f.upper()].append(os.path.relpath(os.path.join(root, f), d))
+
+    def dirs83(path):          # 'data\multiplayer\x.tga' -> ['DATA', 'MULTIP']: comparable with 8.3 folders
+        return [re.sub(r'[^A-Z0-9]', '', p.upper())[:6] for p in path.split(os.sep)[:-1] if p]
+
+    # One disc file can be installed to several places (dsetup.dll goes to
+    # the root and to assets\Binaries): copy it to each, and move it only
+    # when none of its install paths is where it already is.
+    targets = collections.defaultdict(set)
+    for short, inst in table:
+        inst = inst.decode('latin-1').replace('\\', os.sep)
+        cands = by_name.get(short.decode('latin-1').split('\\')[-1].upper(), [])
+        if len(cands) > 1:
+            cands = [c for c in cands if dirs83(c) == dirs83(inst)] or cands
+        if len(cands) == 1:
+            targets[cands[0]].add(inst)
+    moved = 0
+    for src, dsts in targets.items():
+        stays = any(t.lower() == src.lower() for t in dsts)
+        dsts = sorted(t for t in dsts if t.lower() != src.lower())
+        for i, dst in enumerate(dsts):
+            os.makedirs(os.path.join(d, os.path.dirname(dst)), exist_ok=True)
+            if stays or i < len(dsts) - 1:
+                shutil.copy2(os.path.join(d, src), os.path.join(d, dst))
+            else:
+                os.replace(os.path.join(d, src), os.path.join(d, dst))
+            moved += 1
+    # Folders emptied by the moves (DATA\MULTIP_1) go too.
+    for root, dirs, files in os.walk(d, topdown=False):
+        if root != d and not os.listdir(root):
+            os.rmdir(root)
+    return moved
+
+
 def main():
     src = sys.argv[1].strip('"') if len(sys.argv) > 1 else ''
     os.makedirs(os.path.join(ROOT, 'work'), exist_ok=True)
@@ -109,6 +163,7 @@ def main():
             sys.exit('%s is not a disc image holding MechCommander 2 (no Mc2Rel.exe on it)' % src)
     else:
         sys.exit('%s: no such drive, folder or file' % src)
+    print('install names: %d files renamed from the disc\'s 8.3 names' % long_names(OUT))
     if not complete(OUT):
         sys.exit('copied, but %s is still missing a file the game needs (%s)' % (OUT, ', '.join(NEEDED)))
     print('done: %s' % OUT)

@@ -9,7 +9,7 @@ following its shared house style (layout, CLI, conformance harness). Generated
 source is **not** distributed: you bring your own disc and the pipeline
 rebuilds everything locally.
 
-## Status: **v0.1.0-dev, early bring-up. The whole game lifts, builds and runs 30 s without a fault; nothing seen on screen yet.**
+## Status: **v0.1.0-dev, early bring-up. Boots through the intro movie to the main menu, hardware-rendered, in a window.**
 
 | Stage | State |
 |---|---|
@@ -19,11 +19,11 @@ rebuilds everything locally.
 | Function catalog | disasm32 seeded from the PDB: 15,002 functions, recall 99.99% against the PDB (unseeded: 89.7% precision, 85.4% recall) |
 | Lift (`run_lift.py`) | **whole program**: 15,007 functions, 0 lift errors, 156 with no terminator, 5.46M lines of C |
 | Host (`build/mc2.exe`, 32-bit, pcrecomp `native32`) | builds (netlab clang-cl). Maps Mc2Rel.exe and binds all 356 imports, 0 unresolved |
-| Running the game | `--run` gets through the CRT and GameOS init (DirectInput fixed in the host) and is alive at 30 s in `SoundRendererUpdate`. No frame captured yet: the recording on the workstation failed |
+| Running the game | `--run` plays the Microsoft logo movie and reaches the **main menu** (Direct3D 7 on the GPU, windowed). Not yet tried: getting into a mission |
 
 ## Screenshots
 
-None yet: the first recorded run produced no frames (offstage). See ROADMAP.
+![Main menu](docs/screenshots/main-menu.png)
 
 ## What is not in this repo
 

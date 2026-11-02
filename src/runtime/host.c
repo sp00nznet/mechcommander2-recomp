@@ -102,18 +102,59 @@ static void shim_IsBadWritePtr(void) { RET(bad_ptr(ARG(0), ARG(1), WRITABLE), 2)
 typedef HRESULT (WINAPI *dicreate_t)(HINSTANCE, DWORD, const void*, void**, void*);
 static dicreate_t g_dicreate;
 
+/* No joysticks. GameOS opens every game controller it finds
+ * (CMCreateJoystick7, from IDirectInput7::EnumDevices) and that path faults
+ * in ntdll with some devices (a USB microphone with HID buttons is one).
+ * MechCommander 2 is played with the mouse and keyboard, so the enumeration
+ * of joysticks finds none. ponytail: hides the fault rather than fixing it;
+ * look at CMCreateJoystick7 if a pad is ever wanted. */
+#define DIDEVTYPE_JOYSTICK 4
+#define MC2_CMCREATEJOYSTICK7 0x005A0E70u   /* the PDB names it */
+typedef HRESULT (WINAPI *dienum_t)(void*, DWORD, void*, void*, DWORD);
+static dienum_t g_dienum;
+
+static HRESULT WINAPI host_EnumDevices(void* di, DWORD type, void* cb, void* ref, DWORD flags) {
+    /* GameOS enumerates every device (type 0) into CMCreateJoystick7, which
+     * skips mice and keyboards itself: that callback only opens joysticks. */
+    if ((type & 0xFF) == DIDEVTYPE_JOYSTICK || (uint32_t)(uintptr_t)cb == MC2_CMCREATEJOYSTICK7) return 0;
+    return g_dienum(di, type, cb, ref, flags);
+}
+
 static HRESULT WINAPI host_DirectInputCreateEx(HINSTANCE h, DWORD ver, const void* iid, void** out, void* outer) {
     if ((uint32_t)(uintptr_t)h == MC2_BASE) h = GetModuleHandleA(NULL);
-    return g_dicreate(h, ver, iid, out, outer);
+    HRESULT r = g_dicreate(h, ver, iid, out, outer);
+    if (r == 0 && out && *out) {
+        /* EnumDevices is IDirectInput7A's fifth method. Patched in dinput's
+         * own vtable: DirectInput checks an object's vtable pointer is one of
+         * its own (a copied table gets E_INVALIDARG from every call). */
+        void** vt = *(void***)*out;
+        if (vt[4] != (void*)host_EnumDevices) {
+            DWORD old;
+            g_dienum = (dienum_t)vt[4];
+            VirtualProtect(&vt[4], sizeof *vt, PAGE_READWRITE, &old);
+            vt[4] = (void*)host_EnumDevices;
+            VirtualProtect(&vt[4], sizeof *vt, old, &old);
+        }
+    }
+    return r;
 }
+
+static int g_ddtest;
+static void ddtest(const char* stage);
 
 static void shim_GetProcAddress(void) {
     HMODULE m = (HMODULE)(uintptr_t)ARG(0);
     const char* name = (const char*)(uintptr_t)ARG(1);
     FARPROC p = GetProcAddress(m, name);
+    if (g_ddtest && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectDrawCreateEx")) ddtest("in the game");
     if (p && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectInputCreateEx")) {
         g_dicreate = (dicreate_t)p;
         p = (FARPROC)host_DirectInputCreateEx;
+    }
+    if (native32_trace_native) {
+        char mod[MAX_PATH] = "?";
+        GetModuleFileNameA(m, mod, sizeof mod);
+        fprintf(stderr, "[getproc] %s!%s -> %p\n", mod, (uintptr_t)name >= 0x10000 ? name : "#", (void*)p);
     }
     RET((uintptr_t)p, 2);
 }
@@ -134,6 +175,30 @@ static native32_shim_t g_shims[] = {
     { "GetCommandLineA", shim_GetCommandLineA },
     { "ExitProcess", shim_ExitProcess },
 };
+
+/* --ddtest: does DirectDraw find the hardware from this process? Creates a
+ * DirectDraw 7 object and a primary surface (no window), and says whether
+ * the display driver's user-mode DLL got loaded. Run at each stage of
+ * startup to find the one that loses the hardware. */
+static void ddtest(const char* stage) {
+    static const GUID iid_dd7 = {0x15e65ec0, 0x3b9c, 0x11d2, {0xb9, 0x2f, 0x00, 0x60, 0x97, 0x97, 0xea, 0x5b}};
+    typedef HRESULT (WINAPI *create_t)(GUID*, void**, const GUID*, void*);
+    create_t create = (create_t)GetProcAddress(LoadLibraryA("ddraw.dll"), "DirectDrawCreateEx");
+    void** dd = NULL;
+    HRESULT h = create(NULL, (void**)&dd, &iid_dd7, NULL), hs = -1;
+    if (h == 0) {
+        void** vt = *(void***)dd;
+        uint32_t desc[124 / 4] = {124, 1 /* DDSD_CAPS */};
+        void* surf = NULL;
+        ((HRESULT (WINAPI*)(void*, HWND, DWORD))vt[20])(dd, NULL, 8 /* DDSCL_NORMAL */);
+        desc[26] = 0x200;                                      /* ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE */
+        hs = ((HRESULT (WINAPI*)(void*, void*, void**, void*))vt[6])(dd, desc, &surf, NULL);
+        if (surf) ((ULONG (WINAPI*)(void*))(*(void***)surf)[2])(surf);
+        ((ULONG (WINAPI*)(void*))vt[2])(dd);
+    }
+    if (stage) fprintf(stderr, "[ddtest] %-14s create %08lX primary %08lX driver %s\n", stage, h, hs,
+           GetModuleHandleA("nvldumd.dll") || GetModuleHandleA("nvd3dum.dll") ? "loaded" : "NOT loaded");
+}
 
 /* ------------------------------------------------------------ reports */
 
@@ -183,9 +248,35 @@ static DWORD WINAPI watchdog(LPVOID unused) {
     return 0;
 }
 
+/* The game sets 800x600 in 16-bit colour. Windows 10/11 refuses 16-bit
+ * display modes unless the process runs with the DWM8And16BitMitigation
+ * compatibility layer (GameOS then stops with "Another application is
+ * preventing use of full screen mode"). A layer is read from __COMPAT_LAYER
+ * when a process starts, so set it and run this host again, once. No
+ * registry change. Returns -1 when this process already has it. */
+#define MC2_LAYER "DWM8And16BitMitigation"
+static int relaunch_with_layer(void) {
+    char cur[512];
+    DWORD n = GetEnvironmentVariableA("__COMPAT_LAYER", cur, sizeof cur);
+    if (n && n < sizeof cur && strstr(cur, MC2_LAYER)) return -1;
+    char layer[600];
+    _snprintf(layer, sizeof layer - 1, "%s%s" MC2_LAYER, n && n < sizeof cur ? cur : "", n ? " " : "");
+    layer[sizeof layer - 1] = 0;
+    SetEnvironmentVariableA("__COMPAT_LAYER", layer);
+    STARTUPINFOA si = {sizeof si};
+    PROCESS_INFORMATION pi;
+    if (!CreateProcessA(NULL, GetCommandLineA(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) return -1;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    return (int)code;
+}
+
 int main(int argc, char** argv) {
+    int relaunched = relaunch_with_layer();
+    if (relaunched >= 0) return relaunched;
     const char* game = "game";
-    int run = 0;
+    int run = 0, dd = 0;  /* dd: --ddtest */
     /* Redirected stderr is block-buffered, and the guest can end the process
      * natively (TerminateProcess, MSVCRT's exit): keep every line. */
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -197,6 +288,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--watchdog") && i + 1 < argc) g_watchdog_s = strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--native-trace")) native32_trace_native = 1;
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
+        else if (!strcmp(argv[i], "--ddtest")) dd = g_ddtest = 1;
         else {
             printf("usage: mc2 [--run] [--game DIR] [--watchdog S] [--native-trace] [--callbacks]\n"
                    "  without --run: map and bind Mc2Rel.exe, then stop (no window)\n");
@@ -211,8 +303,10 @@ int main(int argc, char** argv) {
 
     /* binkw32.dll and MC2RES.DLL come from the game folder, as they did
      * from the install folder. */
+    if (dd) ddtest("start");
     SetDllDirectoryA(g_game);
     native32_init();
+    if (dd) ddtest("native32_init");
     AddVectoredExceptionHandler(0, crash);
     printf("MechCommander 2 recomp host\n  lifted functions in dispatch: %u\n", recomp_dispatch_count);
     uint32_t span = native32_map(g_guest_exe, MC2_BASE);
@@ -221,6 +315,7 @@ int main(int argc, char** argv) {
     int unresolved = native32_bind(MC2_BASE, g_shims, (int)(sizeof g_shims / sizeof g_shims[0]));
     printf("  imports bound, %d unresolved\n", unresolved);
     if (unresolved) return 1;
+    if (dd) ddtest("mapped+bound");
     if (!run) {
         printf("\n(dry run: image mapped and bound; --run enters 0x%08X)\n", mc2_entry_va);
         return 0;
@@ -231,6 +326,14 @@ int main(int argc, char** argv) {
     if (acmdln) *acmdln = g_guest_cmdline;
     /* The game opens its .fst archives and data\ relative to its own folder. */
     if (!SetCurrentDirectoryA(g_game)) { fprintf(stderr, "cannot enter %s\n", g_game); return 1; }
+    /* Bring DirectDraw up once, natively, before the game starts. When the
+     * game's own first DirectDrawCreateEx is what loads the display driver's
+     * user-mode DLL (nvldumd/nvd3dum), the load fails and DirectDraw reports
+     * no hardware: no 3D device, so GameOS falls back to its software
+     * rasterizer and stops. Loaded here first, the game finds the hardware.
+     * ponytail: works around the failed in-game load; the cause (what the
+     * game's thread does to the driver's DllMain) is not found yet. */
+    ddtest(dd ? "before entry" : NULL);
     if (g_watchdog_s) CloseHandle(CreateThread(NULL, 0, watchdog, NULL, 0, NULL));
     printf("  entering 0x%08X\n\n", mc2_entry_va);
     fflush(stdout);
