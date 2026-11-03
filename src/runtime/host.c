@@ -141,12 +141,22 @@ static HRESULT WINAPI host_DirectInputCreateEx(HINSTANCE h, DWORD ver, const voi
 
 static int g_ddtest;
 static void ddtest(const char* stage);
+static int g_have_display_guid;
+typedef HRESULT (WINAPI *ddcreate_t)(GUID*, void**, const void*, void*);
+static ddcreate_t g_ddcreate;
+static HRESULT WINAPI host_DirectDrawCreateEx(GUID* g, void** out, const void* iid, void* outer);
 
 static void shim_GetProcAddress(void) {
     HMODULE m = (HMODULE)(uintptr_t)ARG(0);
     const char* name = (const char*)(uintptr_t)ARG(1);
     FARPROC p = GetProcAddress(m, name);
     if (g_ddtest && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectDrawCreateEx")) ddtest("in the game");
+    /* GameOS takes DirectDrawCreateEx from blade.dll, which passes it on to
+     * ddraw.dll; either way --display picks the device. */
+    if (p && g_have_display_guid && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectDrawCreateEx")) {
+        g_ddcreate = (ddcreate_t)p;
+        p = (FARPROC)host_DirectDrawCreateEx;
+    }
     if (p && (uintptr_t)name >= 0x10000 && !strcmp(name, "DirectInputCreateEx")) {
         g_dicreate = (dicreate_t)p;
         p = (FARPROC)host_DirectInputCreateEx;
@@ -251,6 +261,37 @@ static native32_shim_t g_shims[] = {
  * DirectDraw 7 object and a primary surface (no window), and says whether
  * the display driver's user-mode DLL got loaded. Run at each stage of
  * startup to find the one that loses the hardware. */
+/* --display \\.\DISPLAYn: run the game's DirectDraw on that display. GameOS
+ * sets display modes while it starts (its hardware probe, then 800x600x16),
+ * even when it ends up windowed, and DirectDrawCreateEx(NULL) means the
+ * primary display: the main monitor changes resolution wherever the window
+ * is. With --display, a NULL device becomes that display's GUID, so the mode
+ * changes land there (an offstage virtual monitor, in test runs). */
+static char g_display[64];
+static GUID g_display_guid;
+
+static BOOL WINAPI find_display(GUID* g, char* desc, char* name, void* ctx, HMONITOR m) {
+    (void)desc; (void)ctx; (void)m;
+    /* Compared from the last backslash, so DISPLAY2, \\.\DISPLAY2 and a
+     * shell-mangled \.\DISPLAY2 all match. */
+    const char* want = strrchr(g_display, '\\') ? strrchr(g_display, '\\') + 1 : g_display;
+    const char* have = name && strrchr(name, '\\') ? strrchr(name, '\\') + 1 : name;
+    if (g && have && !_stricmp(have, want)) { g_display_guid = *g; g_have_display_guid = 1; return FALSE; }
+    return TRUE;
+}
+
+static void resolve_display(void) {
+    typedef HRESULT (WINAPI *enum_t)(void*, void*, DWORD);
+    enum_t en = (enum_t)GetProcAddress(LoadLibraryA("ddraw.dll"), "DirectDrawEnumerateExA");
+    if (en) en((void*)find_display, NULL, 1 /* DDENUM_ATTACHEDSECONDARYDEVICES */);
+    if (!g_have_display_guid) { fprintf(stderr, "no DirectDraw device for %s\n", g_display); exit(1); }
+    printf("  DirectDraw on %s\n", g_display);
+}
+
+static HRESULT WINAPI host_DirectDrawCreateEx(GUID* g, void** out, const void* iid, void* outer) {
+    return g_ddcreate(g ? g : &g_display_guid, out, iid, outer);
+}
+
 static void ddtest(const char* stage) {
     static const GUID iid_dd7 = {0x15e65ec0, 0x3b9c, 0x11d2, {0xb9, 0x2f, 0x00, 0x60, 0x97, 0x97, 0xea, 0x5b}};
     typedef HRESULT (WINAPI *create_t)(GUID*, void**, const GUID*, void*);
@@ -308,6 +349,34 @@ static LONG CALLBACK crash(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/* --watch PTR OFF,OFF,...: every 500 ms, print the floats at those offsets
+ * of the object a guest pointer variable points to (the camera is
+ * "--peek 0x6D5DD4 0x3C,0x40,0x44,0x250"). Read without the machine lock:
+ * a torn value now and then is fine for a log. */
+static uint32_t g_watch_ptr, g_watch_off[256];
+static int g_nwatch;
+
+static DWORD WINAPI watcher(LPVOID unused) {
+    (void)unused;
+    for (DWORD t = 0;; t += 500) {
+        Sleep(500);
+        uint32_t obj = MEM32(g_watch_ptr);
+        if (!obj) continue;
+        fprintf(stderr, "[peek] %6lu ms", t);
+        for (int i = 0; i < g_nwatch; i++)
+            if (!bad_ptr(obj + g_watch_off[i], 4, READABLE))
+                fprintf(stderr, "  +%X=%g", g_watch_off[i], *(float*)(uintptr_t)(obj + g_watch_off[i]));
+        fprintf(stderr, "\n");
+    }
+}
+
+static void parse_watch(const char* ptr, const char* offs) {
+    g_watch_ptr = strtoul(ptr, NULL, 0);
+    if (!strcmp(offs, "*")) { for (uint32_t o = 0; o < 0x300; o += 4) g_watch_off[g_nwatch++] = o; return; }  /* the first 0x300 bytes */
+    for (const char* s = offs; *s && g_nwatch < 256; s += strspn(s, ","))
+        g_watch_off[g_nwatch++] = strtoul(s, (char**)&s, 0);
+}
+
 static DWORD WINAPI watchdog(LPVOID unused) {
     (void)unused;
     Sleep(g_watchdog_s * 1000);
@@ -361,6 +430,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
         else if (!strcmp(argv[i], "--ddtest")) dd = g_ddtest = 1;
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) load_input(argv[++i]);
+        else if (!strcmp(argv[i], "--display") && i + 1 < argc) strncpy(g_display, argv[++i], sizeof g_display - 1);
+        else if (!strcmp(argv[i], "--peek") && i + 2 < argc) { parse_watch(argv[i + 1], argv[i + 2]); i += 2; }
         else {
             printf("usage: mc2 [--run] [--game DIR] [--watchdog S] [--native-trace] [--callbacks]\n"
                    "  without --run: map and bind Mc2Rel.exe, then stop (no window)\n");
@@ -407,7 +478,9 @@ int main(int argc, char** argv) {
      * game's thread does to the driver's DllMain) is not found yet. */
     ddtest(dd ? "before entry" : NULL);
     if (g_watchdog_s) CloseHandle(CreateThread(NULL, 0, watchdog, NULL, 0, NULL));
+    if (g_display[0]) resolve_display();
     g_in_t0 = GetTickCount();
+    if (g_nwatch) CloseHandle(CreateThread(NULL, 0, watcher, NULL, 0, NULL));
     printf("  entering 0x%08X\n\n", mc2_entry_va);
     fflush(stdout);
     native32_call_guest(mc2_entry_va, 0, NULL);

@@ -39,3 +39,9 @@ follow [SemVer](https://semver.org/).
   menus without the real cursor. `tools/input/first-mission.txt` goes New
   Campaign, Load, skips the intro movie, and lands in Carver V's first
   mission: HUD, minimap and units are drawn, the 3D view is not.
+- `--display DISPLAYn` runs the game's DirectDraw on that display: GameOS
+  sets display modes while it starts even when it ends up windowed, and
+  DirectDrawCreateEx(NULL) means the primary monitor. Test runs pass the
+  offstage virtual monitor, so the main monitor is never touched.
+- `--peek PTR OFF,...` logs floats of a guest object every 500 ms (the
+  camera is `--peek 0x6D5DD4 0x3C,0x40,0x44,0x250`).
