@@ -45,3 +45,12 @@ follow [SemVer](https://semver.org/).
   offstage virtual monitor, so the main monitor is never touched.
 - `--peek PTR OFF,...` logs floats of a guest object every 500 ms (the
   camera is `--peek 0x6D5DD4 0x3C,0x40,0x44,0x250`).
+- **The battlefield draws.** The camera laid itself almost flat on the
+  ground because pcrecomp's lifter had `fsincos` backwards (sine and cosine
+  swapped), and `Stuff::Vector3D::operator=(EulerAngles)` builds the view
+  direction with it. Fixed in the toolkit (pcrecomp#165); found by logging
+  the camera with `--peek`: a 35-degree tilt with the eye 151 units up
+  instead of 688.
+- `tools/input/first-mission.txt` no longer depends on boot time: it keeps
+  clicking New Campaign and Load, then skips movies at a spot that is inert
+  on every screen.

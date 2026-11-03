@@ -9,7 +9,7 @@ following its shared house style (layout, CLI, conformance harness). Generated
 source is **not** distributed: you bring your own disc and the pipeline
 rebuilds everything locally.
 
-## Status: **v0.1.0-dev, early bring-up. Boots to the main menu and into the first campaign mission; the 3D battlefield does not draw yet.**
+## Status: **v0.1.0-dev, early bring-up. Plays the intro and loads the first campaign mission with the battlefield drawn: terrain, mechs, base, HUD. Not played through yet.**
 
 | Stage | State |
 |---|---|
@@ -19,13 +19,13 @@ rebuilds everything locally.
 | Function catalog | disasm32 seeded from the PDB: 15,002 functions, recall 99.99% against the PDB (unseeded: 89.7% precision, 85.4% recall) |
 | Lift (`run_lift.py`) | **whole program**: 15,007 functions, 0 lift errors, 156 with no terminator, 5.46M lines of C |
 | Host (`build/mc2.exe`, 32-bit, pcrecomp `native32`) | builds (netlab clang-cl). Maps Mc2Rel.exe and binds all 356 imports, 0 unresolved |
-| Running the game | `--run` plays the intro, reaches the main menu, and loads the first campaign mission (HUD, minimap, mechs and pilots). The 3D view stays a flat fog colour: terrain and units are not drawn yet |
+| Running the game | `--run` plays the intro, reaches the main menu and loads Carver V's first mission, hardware-rendered in a window: terrain, mechs, buildings, HUD, pilot video. Needs pcrecomp#165 (the `fsincos` fix) |
 
 ## Screenshots
 
 ![Main menu](docs/screenshots/main-menu.png)
 ![Campaign intro](docs/screenshots/campaign-intro.png)
-![First mission: HUD up, battlefield not drawn yet](docs/screenshots/first-mission.png)
+![First mission](docs/screenshots/first-mission.png)
 
 ## What is not in this repo
 
@@ -114,6 +114,8 @@ build\mc2.exe --game D:\mc2         use an install somewhere other than game\
 build\mc2.exe --native-trace        one line per call into Windows or DirectX
 build\mc2.exe --callbacks           one line per call from Windows back into the game
 build\mc2.exe --run --input tools\input\first-mission.txt   click through to the first mission
+build\mc2.exe --run --display DISPLAY2   run DirectDraw (and its display mode changes) on that monitor
+build\mc2.exe --run --peek 0x6D5DD4 0x3C,0x40,0x44   log the camera's floats every 500 ms
 build\mc2.exe --ddtest              does DirectDraw find the 3D hardware at each startup stage
 py -3 tools\conformance.py [--run]  the conformance harness
 ```

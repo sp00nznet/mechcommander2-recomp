@@ -5,16 +5,12 @@ is in the README's Status section and in `docs/`.
 
 ## Next
 
-- **Draw the battlefield.** In the first mission the camera flies in, the
-  terrain and mechs are visible for a moment, then the view sinks into the
-  ground and stays a flat fog colour while the HUD draws. The camera's own
-  velocities settle to zero (it reaches its goal), so the goal or the
-  projection is wrong, not the motion. Checked and lifted correctly so far:
-  the zoom clamp (fcomp/fnstsw), fptan, the st(i) stack forms in
-  calculateProjectionConstants. Terrain and units are either
-  failing the depth test or fogged out; look at the projection and haze
-  numbers the lifted code produces against the prefs (MaxClipDistance 3000,
-  MinHazeDistance 2000).
+- **Play the first mission through**: move, fight, win; then the next
+  missions. Expect more lift bugs in the same family as fsincos: pcrecomp's
+  difftest is the place to pin each one down.
+- **GameOS pauses when its window is inactive**, so a test run on a virtual
+  monitor stalls while someone uses the desktop. Posting WM_ACTIVATE to keep
+  it going broke mouse clicks; find the flag GameOSWinProc keeps instead.
 - **The joystick fault** (CMCreateJoystick7 with some HID devices) is hidden,
   not fixed.
 - **The driver warm-up** works around a failed first load of the display
