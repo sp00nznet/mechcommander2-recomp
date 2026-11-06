@@ -5,7 +5,14 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-06
+
+First release: the intro, the main menu and the first campaign mission with
+the battlefield drawn. Needs pcrecomp 2adc02f or later (#162, #165).
+
 ### Added
+- The recomp-launcher installer (`launcher/launcher.json`, a release file on
+  each `v*` tag) and an unattended `setup.ps1 -Yes -Game <disc>`.
 - First scaffold, in the shape of mechwarrior3-recomp: `tools/gamefiles.py`
   (drive, folder, ISO/MDF, or a .zip holding the image), `tools/catalog.py`,
   `run_lift.py`, the native32 host, `Setup.cmd`, conformance harness.

@@ -9,7 +9,7 @@ following its shared house style (layout, CLI, conformance harness). Generated
 source is **not** distributed: you bring your own disc and the pipeline
 rebuilds everything locally.
 
-## Status: **v0.1.0-dev, early bring-up. Plays the intro and loads the first campaign mission with the battlefield drawn: terrain, mechs, base, HUD. Not played through yet.**
+## Status: **v0.1.0, early bring-up. Plays the intro and loads the first campaign mission with the battlefield drawn: terrain, mechs, base, HUD. Not played through yet.**
 
 | Stage | State |
 |---|---|
@@ -38,7 +38,20 @@ not be read while working on this repo: see [NOTICE](NOTICE).
 ## Getting Started
 
 You need your **MechCommander 2 CD** (in a drive, as an `.iso`/`.mdf`, or a
-`.zip` holding the image), Windows 10 or 11, and about 4 GB free.
+`.zip` holding the image), Windows 10 or 11, about 6 GB free and 16 GB of
+memory. The first build can take one to four hours.
+
+### Installer (easiest)
+
+1. Download **MC2-Recomp-Installer-windows-x64.exe** from the
+   [latest release](https://github.com/sp00nznet/mechcommander2-recomp/releases/latest)
+   and run it. Windows SmartScreen asks once about the unsigned installer:
+   **More info**, then **Run anyway**.
+2. Point it at your disc, or the folder holding its image, and press **Build**.
+   It fetches this repository and pcrecomp as source, installs what is missing
+   (Python, CMake, Ninja, the Visual Studio Build Tools) and runs the same
+   steps as Setup.cmd below. Nothing from the game is downloaded.
+3. Press **Play**.
 
 ### Quick start
 
