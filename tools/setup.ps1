@@ -6,7 +6,13 @@
 # lifts it to C, builds the 32-bit host and leaves a shortcut. Each step is
 # skipped when its output already exists (-Force redoes them). Everything it
 # does goes to setup.log.
-param([switch]$Force, [string]$Disc = "")
+# -Yes (or RECOMP_LAUNCHER set, as recomp-launcher's installer does) answers
+# every question with yes and never waits for Enter; -Game is the disc: a
+# drive, a folder holding the disc's files or an image, an .iso/.mdf, or a
+# .zip holding one.
+param([switch]$Force, [switch]$Yes, [string]$Game = "", [string]$Disc = "")
+$Auto = $Yes -or [bool]$env:RECOMP_LAUNCHER
+if ($Game -and -not $Disc) { $Disc = $Game }
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
@@ -22,9 +28,9 @@ function Step($n, $t) { Write-Host ""; Say "[$n/6] $t" 'Cyan' }
 function Fail($t) {
   Say "" ; Say "Setup stopped: $t" 'Red'
   Say "The details are in $Log. Fix that and run Setup.cmd again; finished steps are skipped." 'Yellow'
-  Read-Host "Press Enter to close" | Out-Null; exit 1
+  if (-not $Auto) { Read-Host "Press Enter to close" | Out-Null }; exit 1
 }
-function Ask($q) { $a = Read-Host "$q [Y/n]"; return -not ($a -match '^[nN]') }   # Enter = yes
+function Ask($q) { if ($Auto) { Say "$q yes"; return $true }; $a = Read-Host "$q [Y/n]"; return -not ($a -match '^[nN]') }   # Enter = yes
 function Refresh-Path {
   $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 }
@@ -99,8 +105,22 @@ Say "  pcrecomp: $Toolkit"
 # is there, with CMake and Ninja. Visual Studio is several GB with an installer
 # of its own, so this says what to install rather than installing it.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$vs = if (Test-Path $vswhere) { (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath) } else { $null }
-if (-not $vs) { Fail "Visual Studio 2022 (or its Build Tools) with 'Desktop development with C++' is needed. Install it, then run Setup.cmd again." }
+function Find-VS {
+  if (-not (Test-Path $vswhere)) { return $null }
+  return (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+}
+$vs = Find-VS
+if (-not $vs) {
+  Say "  The Visual Studio C++ build tools are not installed."
+  if (-not (Ask "  Install the Visual Studio 2022 Build Tools now (winget, about 3 GB; Windows asks for permission)?")) {
+    Fail "Visual Studio 2022 (or its Build Tools) with 'Desktop development with C++' is needed."
+  }
+  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail "winget is missing. Install 'App Installer' from the Microsoft Store, or the Visual Studio Build Tools yourself." }
+  Exec @('winget', 'install', '-e', '--id', 'Microsoft.VisualStudio.2022.BuildTools', '--accept-package-agreements', '--accept-source-agreements',
+         '--override', '--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended') | Out-Null
+  $vs = Find-VS
+  if (-not $vs) { Fail "the Visual Studio Build Tools did not install. Install them with 'Desktop development with C++', then run Setup.cmd again." }
+}
 Say "  Visual Studio: $vs"
 # $tool, not $t: PowerShell names are case-insensitive, and $T is the toolkit path.
 foreach ($tool in @(@('cmake', 'Kitware.CMake', '30 MB'), @('ninja', 'Ninja-build.Ninja', '1 MB'))) {
@@ -125,6 +145,7 @@ if ((Test-Path 'game\Mc2Rel.exe') -and -not $Force) {
              Where-Object { Test-Path (Join-Path $_ 'Mc2Rel.exe') } | Select-Object -First 1)
     if ($Disc) { Say "  Found the disc in $Disc" }
   }
+  if ($Auto -and -not ($Disc -and (Test-Path $Disc))) { Fail "no MechCommander 2 disc found: pass the drive, folder or disc image." }
   while (-not ($Disc -and (Test-Path $Disc))) {
     $Disc = (Read-Host "  Paste the drive, disc image (.iso, .mdf, or a .zip holding one) or install folder of MechCommander 2").Trim('"', ' ')
   }
@@ -161,4 +182,4 @@ Say "  $lnk"
 Write-Host ""
 Say "Done. Double-click 'MechCommander 2 (recomp).cmd' to run it." 'Green'
 Say "This is early bring-up: read the README's Status section for what to expect."
-Read-Host "Press Enter to close" | Out-Null
+if (-not $Auto) { Read-Host "Press Enter to close" | Out-Null }

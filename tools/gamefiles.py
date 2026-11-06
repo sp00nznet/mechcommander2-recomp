@@ -150,6 +150,12 @@ def main():
         src = next(('%s:\\' % c for c in string.ascii_uppercase if find('%s:\\' % c, 'Mc2Rel.exe')), '')
         if not src:
             sys.exit('no drive holds the MechCommander 2 CD; pass a drive, folder or disc image')
+    if os.path.isdir(src) and not find(src, 'Mc2Rel.exe'):
+        # A folder holding the disc image (or a .zip of it), as the installer passes.
+        img = next((os.path.join(src, f) for f in sorted(os.listdir(src))
+                    if f.lower().endswith(('.iso', '.mdf', '.zip'))), None)
+        if img:
+            src = img
     if os.path.isdir(src):
         if not find(src, 'Mc2Rel.exe'):
             sys.exit('%s holds neither the MechCommander 2 disc nor an install (no Mc2Rel.exe)' % src)

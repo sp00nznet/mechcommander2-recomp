@@ -1,0 +1,18 @@
+{
+  "title": "MechCommander 2",
+  "repo": "sp00nznet/mechcommander2-recomp",
+  "accent": "#d98c1f",
+  "note": {
+    "windows": "Point it at your MechCommander 2 CD, or the folder holding its disc image (.iso, or a .zip of one). The first build can take one to four hours, about 6 GB of disk and 16 GB of memory: MechCommander 2 is 2.5 MB of machine code, 5.5 million lines of C. Python, CMake, Ninja and the Visual Studio Build Tools (about 3 GB) are installed if they are missing; Windows asks for permission.",
+    "default": "MechCommander 2 builds on Windows only: the recompiled game runs on the real Windows DirectX DLLs. Use the Windows installer."
+  },
+  "game": {
+    "name": "MechCommander 2 disc",
+    "files": ["Mc2Rel.exe|*.iso|*.mdf|*.zip"]
+  },
+  "sources": [{ "repo": "sp00nznet/pcrecomp", "ref": "2adc02fec0702933325801aa7b29a7646321857f", "dir": "tools" }],
+  "setup": {
+    "windows": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tools\setup.ps1", "-Yes", "-Game", "{game}"]
+  },
+  "play": "* (recomp).cmd"
+}
